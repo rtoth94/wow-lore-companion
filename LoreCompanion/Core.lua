@@ -8,11 +8,43 @@ loreWindow:SetSize(760, 540)
 loreWindow:SetPoint("CENTER")
 loreWindow:EnableMouse(true)
 -- Keep a readable minimum size while allowing the bottom-right corner to resize.
+loreWindow:SetResizable(true)
+loreWindow:SetResizeBounds(660, 350)
 loreWindow.TitleText:SetText("Lore Companion")
+loreWindow:SetMovable(true)
+loreWindow:SetClampedToScreen(true)
+-- Restrict dragging to the title bar so selecting text/list items never moves it.
+local titleDrag = CreateFrame("Frame", nil, loreWindow)
+titleDrag:SetPoint("TOPLEFT", 4, 0)
+titleDrag:SetPoint("TOPRIGHT", -30, 0)
+titleDrag:SetHeight(24)
+titleDrag:EnableMouse(true)
+titleDrag:RegisterForDrag("LeftButton")
+titleDrag:SetScript("OnDragStart", function() loreWindow:StartMoving() end)
+titleDrag:SetScript("OnDragStop", function() loreWindow:StopMovingOrSizing() end)
+titleDrag:SetScript("OnHide", function() loreWindow:StopMovingOrSizing() end)
 loreWindow.CloseButton:SetScript("OnClick", function()
     loreWindow:Hide()
 end)
 loreWindow:Hide()
+
+local resizeHandle = CreateFrame("Button", nil, loreWindow)
+resizeHandle:SetSize(24, 24)
+resizeHandle:SetPoint("BOTTOMRIGHT", -2, 2)
+resizeHandle:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+resizeHandle:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+resizeHandle:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+resizeHandle:SetScript("OnMouseDown", function(self, button)
+    if button == "LeftButton" then
+        loreWindow:StartSizing("BOTTOMRIGHT")
+    end
+end)
+resizeHandle:SetScript("OnMouseUp", function()
+    loreWindow:StopMovingOrSizing()
+end)
+resizeHandle:SetScript("OnHide", function()
+    loreWindow:StopMovingOrSizing()
+end)
 
 -- Chapter names may reveal future story. Reveal the full list only by opt-in;
 -- this does not unlock future summaries or infer which chapters are completed.
@@ -63,6 +95,10 @@ local scrollContent = CreateFrame("Frame", nil, scrollFrame)
 scrollContent:SetSize(380, 1)
 scrollFrame:SetScrollChild(scrollContent)
 local loreText = scrollContent:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+-- Use the player's existing font with a larger reading size and line spacing.
+local fontPath, _, fontFlags = loreText:GetFont()
+loreText:SetFont(fontPath, 15, fontFlags)
+loreText:SetSpacing(3)
 loreText:SetPoint("TOPLEFT")
 loreText:SetWidth(380)
 loreText:SetJustifyH("LEFT")
@@ -78,13 +114,51 @@ local scrollHint = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontHighligh
 scrollHint:SetPoint("BOTTOM", 0, 12)
 scrollHint:SetText("Mouse wheel / trackpad to scroll")
 
+-- Both panels use the same small scrollbar binding. A guard prevents slider
+-- updates and scroll events from calling one another recursively.
+local function addScrollbar(viewport)
+    local slider = CreateFrame("Slider", nil, loreWindow)
+    slider:SetPoint("TOPLEFT", viewport, "TOPRIGHT", 5, -8)
+    slider:SetPoint("BOTTOMLEFT", viewport, "BOTTOMRIGHT", 5, 8)
+    slider:SetWidth(12)
+    slider:SetOrientation("VERTICAL")
+    slider:SetMinMaxValues(0, 0)
+    slider:SetValue(0)
+    local track = slider:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetColorTexture(0, 0, 0, 0.45)
+    slider:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
+    slider:GetThumbTexture():SetSize(16, 24)
+    local syncing = false
+    local function sync()
+        if syncing then return end
+        syncing = true
+        local range = math.max(0, viewport:GetVerticalScrollRange())
+        local offset = math.max(0, math.min(viewport:GetVerticalScroll(), range))
+        slider:SetMinMaxValues(0, range)
+        slider:SetValue(offset)
+        slider:SetEnabled(range > 0)
+        slider:SetAlpha(range > 0 and 1 or 0.3)
+        viewport:SetVerticalScroll(offset)
+        syncing = false
+    end
+    slider:SetScript("OnValueChanged", function(self, value)
+        if not syncing then viewport:SetVerticalScroll(value) end
+    end)
+    viewport:SetScript("OnVerticalScroll", sync)
+    viewport:SetScript("OnScrollRangeChanged", sync)
+    sync()
+end
+addScrollbar(chapterScroll)
+addScrollbar(scrollFrame)
+
 local function updateTextLayout()
     -- Wrapping changes the text height. Recalculate the scroll child after its
     -- width changes, then clamp the old offset to the new scrollable range.
     local width = math.max(1, scrollFrame:GetWidth())
     scrollContent:SetWidth(width)
     -- Limit line length when the player stretches the window very wide.
-    loreText:SetWidth(width)
+    loreText:SetWidth(math.min(width, 620))
     scrollContent:SetHeight(math.max(1, loreText:GetStringHeight() + 8))
     scrollFrame:UpdateScrollChildRect()
     scrollFrame:SetVerticalScroll(math.min(scrollFrame:GetVerticalScroll(), scrollFrame:GetVerticalScrollRange()))
@@ -117,6 +191,7 @@ local function selectSection(section)
     for _, button in ipairs(chapterButtons) do
         local selected = button.section == section
         button.selection:SetShown(selected)
+        button.selectionBar:SetShown(selected)
         if selected then
             button.label:SetTextColor(1, 0.82, 0.3)
         elseif button.section and button.section.unavailable then
@@ -178,6 +253,11 @@ local function refreshContent()
             button.selection = button:CreateTexture(nil, "BACKGROUND")
             button.selection:SetAllPoints()
             button.selection:SetColorTexture(0.6, 0.45, 0.15, 0.35)
+            button.selectionBar = button:CreateTexture(nil, "ARTWORK")
+            button.selectionBar:SetPoint("TOPLEFT")
+            button.selectionBar:SetPoint("BOTTOMLEFT")
+            button.selectionBar:SetWidth(3)
+            button.selectionBar:SetColorTexture(1, 0.82, 0.3, 1)
             button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
             button:SetScript("OnClick", function(self) selectSection(self.section) end)
             -- Buttons receive mouse input, so forward wheel movement to the list.
