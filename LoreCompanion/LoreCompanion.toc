@@ -2,4 +2,6 @@
 ## Title: Lore Companion
 ## Notes: Explore campaign stories and chapter summaries.
 
+Campaign.lua
+Window.lua
 Core.lua
