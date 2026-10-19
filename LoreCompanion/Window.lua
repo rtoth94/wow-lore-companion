@@ -227,7 +227,8 @@ local function refreshContent()
             chapterButtons[index] = button
         end
         button.section = section
-        button.label:SetText(section.title)
+        -- Display order is not a verified chapter number or completion status.
+        button.label:SetText(index .. ". " .. section.title)
         button.label:SetTextColor(section.unavailable and 0.6 or 1, section.unavailable and 0.6 or 0.82, section.unavailable and 0.6 or 0.3)
         button:SetHeight(math.max(36, button.label:GetStringHeight() + 16))
         button:ClearAllPoints()
