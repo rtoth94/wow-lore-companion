@@ -1,0 +1,12 @@
+{
+  "campaign_id": 270,
+  "campaign_name": "Midnight",
+  "note": "Candidate membership and API-returned order observed in the client; completeness and narrative order are not verified.",
+  "chapters": [
+    {
+      "chapter_id": 5811,
+      "title": "The Light's Summons",
+      "quest_ids": [91281, 88719, 86769, 86770, 89271, 86780, 86805, 89012, 86806, 86807, 91274, 86834, 86811, 86848, 86849, 86850, 86852]
+    }
+  ]
+}

@@ -87,13 +87,13 @@ divider:SetPoint("TOPLEFT", 250, -72)
 divider:SetPoint("BOTTOMLEFT", 250, 35)
 divider:SetWidth(1)
 local storyTitle = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-storyTitle:SetPoint("TOPLEFT", 270, -72)
-storyTitle:SetPoint("TOPRIGHT", -20, -72)
+storyTitle:SetPoint("TOPLEFT", 270, -104)
+storyTitle:SetPoint("TOPRIGHT", -20, -104)
 storyTitle:SetJustifyH("LEFT")
 
 -- The scroll child grows with the text; the viewport stays inside the window.
 local scrollFrame = CreateFrame("ScrollFrame", nil, loreWindow)
-scrollFrame:SetPoint("TOPLEFT", 270, -117)
+scrollFrame:SetPoint("TOPLEFT", 270, -145)
 scrollFrame:SetPoint("BOTTOMRIGHT", -38, 70)
 local scrollContent = CreateFrame("Frame", nil, scrollFrame)
 scrollContent:SetSize(380, 1)
@@ -212,8 +212,73 @@ local chapterButtons = {}
 local selectedSection
 local visibleSections = {}
 local selectedIndex
+local activeTab = "Summary"
+local tabOffsets = { Summary = 0, Quests = 0 }
+local summaryTab = makeButton("Summary", 92)
+summaryTab:SetPoint("TOPLEFT", 270, -68)
+local questsTab = makeButton("Quests", 82)
+questsTab:SetPoint("LEFT", summaryTab, "RIGHT", 4, 0)
+
+local function questReadingText()
+    local data = addon.QuestData
+    if not data then
+        return "Bundled quest data is not installed. Build and deploy the packaged addon."
+    end
+    -- This single English heading was checked against chapter 5811 in-game.
+    -- Do not infer arbitrary chapter IDs from recap order or matching titles.
+    if data.campaignID ~= 270 or selectedSection.title ~= "The Light's Summons" then
+        return "No bundled quest data available for this chapter."
+    end
+    local matches = 0
+    for _, section in ipairs(visibleSections) do
+        if section.title == selectedSection.title then matches = matches + 1 end
+    end
+    if matches ~= 1 then
+        return "Quest mapping is unavailable for this repeated heading."
+    end
+    local chapter
+    for _, candidate in ipairs(data.chapters or {}) do
+        if candidate.chapterID == 5811 then chapter = candidate; break end
+    end
+    if not chapter or not chapter.questIDs or #chapter.questIDs == 0 then
+        return "No bundled quest data available for this chapter."
+    end
+    local paragraphs = { "Original quest descriptions (English). Full dialogue is not included.\nQuest order has not been verified as narrative order." }
+    for index, questID in ipairs(chapter.questIDs) do
+        local quest = data.quests and data.quests[questID]
+        local title = quest and quest.title or ("Quest " .. questID)
+        table.insert(paragraphs, index .. ". " .. title)
+        local description = quest and quest.description
+        table.insert(paragraphs, description and description ~= "" and description or "Original quest description unavailable.")
+    end
+    return table.concat(paragraphs, "\n\n")
+end
+
+local function renderTab()
+    summaryTab:SetEnabled(activeTab ~= "Summary")
+    questsTab:SetEnabled(activeTab ~= "Quests")
+    local text = campaignText
+    if selectedSection then
+        text = activeTab == "Summary" and selectedSection.text or questReadingText()
+    end
+    displayText(text)
+    scrollFrame:SetVerticalScroll(math.max(0, math.min(tabOffsets[activeTab], scrollFrame:GetVerticalScrollRange())))
+end
+
+local function switchTab(tab)
+    tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
+    activeTab = tab
+    renderTab()
+end
+summaryTab:SetScript("OnClick", function() switchTab("Summary") end)
+questsTab:SetScript("OnClick", function() switchTab("Quests") end)
 
 local function selectSection(section)
+    if selectedSection ~= section then
+        tabOffsets = { Summary = 0, Quests = 0 }
+    else
+        tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
+    end
     selectedSection = section
     for index, item in ipairs(visibleSections) do
         if item == section then selectedIndex = index; break end
@@ -240,7 +305,7 @@ local function selectSection(section)
     end
     chapterScroll:SetVerticalScroll(math.max(0, math.min(offset, chapterScroll:GetVerticalScrollRange())))
     storyTitle:SetText(section.title)
-    displayText(section.text)
+    renderTab()
     for _, button in ipairs(chapterButtons) do
         local selected = button.section == section
         button.selection:SetShown(selected)
@@ -331,7 +396,8 @@ local function refreshContent()
         nextButton:Disable()
         positionLabel:SetText("")
         storyTitle:SetText("Midnight")
-        displayText(campaignText)
+        tabOffsets = { Summary = 0, Quests = 0 }
+        renderTab()
     end
 end
 
@@ -346,6 +412,8 @@ end)
 
 addon.Window = {}
 function addon.Window.Open()
+    activeTab = "Summary"
+    tabOffsets = { Summary = 0, Quests = 0 }
     loreWindow:Show()
     selectedSection = nil
     addon.Campaign.Request(function(message)

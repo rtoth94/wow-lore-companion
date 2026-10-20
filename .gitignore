@@ -89,3 +89,11 @@ luac.out
 *.i*86
 *.x86_64
 *.hex
+
+# Python environments and build metadata
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
