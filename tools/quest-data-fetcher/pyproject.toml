@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lore-quest-data"
+name = "quest-data-fetcher"
 dynamic = ["version"]
 description = "Generate original Blizzard quest descriptions as JSON and Lua data for Lore Companion."
 readme = "README.md"
@@ -11,10 +11,10 @@ requires-python = ">=3.9"
 dependencies = []
 
 [project.scripts]
-lore-quest-data = "lore_quest_data.cli:main"
+quest-data-fetcher = "quest_data_fetcher.cli:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "lore_quest_data.__version__"}
+version = {attr = "quest_data_fetcher.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

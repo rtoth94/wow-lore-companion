@@ -46,7 +46,7 @@ def deploy(archive_path, addons):
     if not addons.is_dir():
         raise ValueError(f"AddOns directory not found: {addons}")
     if not archive_path.is_file():
-        raise ValueError("No built ZIP found. Run python3 manage.py --build first.")
+        raise ValueError("No built ZIP found. Run uv run manage.py --build first.")
     with ZipFile(archive_path) as archive:
         names = archive.namelist()
         required = {"LoreCompanion/LoreCompanion.toc", "LoreCompanion/QuestData.lua"}
@@ -88,9 +88,11 @@ def main():
     archive = output / "LoreCompanion.zip"
     if args.build:
         archive.unlink(missing_ok=True)
-        project = root / "prototypes/quest-data"
-        subprocess.run([sys.executable, "-m", "lore_quest_data", "--map", str(project / "quest_map.json"),
-                        "--env-file", str(project / ".env"), "--output", str(output), "--region", args.region], check=True)
+        project = root / "tools/quest-data-fetcher"
+        environment = dict(os.environ)
+        environment.pop("VIRTUAL_ENV", None)  # uv selects the fetcher project environment.
+        subprocess.run(["uv", "run", "--project", str(project), "--locked", "quest-data-fetcher", "--map", str(project / "quest_map.json"),
+                        "--env-file", str(project / ".env"), "--output", str(output), "--region", args.region], check=True, env=environment)
         package(output, root / "LoreCompanion")
     if args.deploy:
         deploy(archive, args.addons_dir)

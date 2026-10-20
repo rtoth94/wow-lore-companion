@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from lore_quest_data.generate import generate, lua
+from quest_data_fetcher.generate import generate, lua
 
 
 class GenerationTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class GenerationTests(unittest.TestCase):
             output = root / 'output'
             output.mkdir()
             (output / 'README.md').write_text('keep')
-            with patch('lore_quest_data.generate.authenticate', return_value='secret'), patch('lore_quest_data.generate.time.sleep'), patch('lore_quest_data.generate.fetch_quest', side_effect=[{'id': 10, 'description': 'Original\n\né'}, {'id': 20}]) as fetch:
+            with patch('quest_data_fetcher.generate.authenticate', return_value='secret'), patch('quest_data_fetcher.generate.time.sleep'), patch('quest_data_fetcher.generate.fetch_quest', side_effect=[{'id': 10, 'description': 'Original\n\né'}, {'id': 20}]) as fetch:
                 generate(path, output, 'eu', root / '.env')
             self.assertEqual(fetch.call_count, 2)
             self.assertEqual((output / 'README.md').read_text(), 'keep')
@@ -32,7 +32,7 @@ class GenerationTests(unittest.TestCase):
             self.assertIn('{ 20 }', text)
             self.assertIn('["descriptionAvailable"] = false', text)
             self.assertNotIn('secret', text)
-            with patch('lore_quest_data.generate.authenticate', return_value='secret'), patch('lore_quest_data.generate.time.sleep'), patch('lore_quest_data.generate.fetch_quest', side_effect=RuntimeError('HTTP 404')):
+            with patch('quest_data_fetcher.generate.authenticate', return_value='secret'), patch('quest_data_fetcher.generate.time.sleep'), patch('quest_data_fetcher.generate.fetch_quest', side_effect=RuntimeError('HTTP 404')):
                 with self.assertRaises(RuntimeError):
                     generate(path, output, 'eu', root / '.env')
             self.assertFalse((output / 'QuestData.lua').exists())
