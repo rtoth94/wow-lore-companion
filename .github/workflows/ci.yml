@@ -1,0 +1,27 @@
+name: Lua syntax
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: Validate Lua syntax
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install Lua 5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lua5.1
+
+      # Parse each source file without executing WoW API calls.
+      - name: Check addon Lua files
+        run: |
+          find LoreCompanion -type f -name '*.lua' -print0 |
+            xargs -0 -r -n 1 luac5.1 -p
