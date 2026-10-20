@@ -48,6 +48,10 @@ Logs/
 # Compiled Lua sources
 luac.out
 
+# Generated quest exports and addon builds
+/output/*
+!/output/README.md
+
 # luarocks build files
 *.src.rock
 *.zip
