@@ -513,18 +513,18 @@ Development environment:
 
 Current status:
 
-- GitHub repository created.
-- VS Code configured.
-- Codex extension installed.
-- Initial addon implementation not yet started.
+- Version 0.2.2: campaign recap browser with section navigation and reading preferences.
+- Bundled original English quest descriptions for The Light's Summons.
+- Build/deploy tooling, campaign request timeout, and deployment rollback implemented.
+- Quest narrative order, full dialogue, and completion indicators remain unverified or unimplemented.
 
 Current milestone:
 
-**Milestone 0 — First Working Addon**
+**Parts of Milestones 2–5 implemented — stabilize the current browser.**
 
 Current task:
 
-**Step 0.1 — Understand and create the addon manifest.**
+**Validate version 0.2.2 in WoW: timeout/retry behavior, bookmarks, and existing reading views.**
 
 Do not implement subsequent steps automatically.
 

@@ -1,4 +1,4 @@
-name: Lua syntax
+name: Validation
 
 on:
   push:
@@ -25,3 +25,11 @@ jobs:
         run: |
           find LoreCompanion -type f -name '*.lua' -print0 |
             xargs -0 -r -n 1 luac5.1 -p
+
+      - name: Check campaign request handling
+        run: lua5.1 tests/campaign.lua
+
+      - name: Check quest generation and deployment
+        env:
+          PYTHONPATH: .:tools/quest-data-fetcher/src
+        run: python3 -m unittest discover -s tools/quest-data-fetcher/tests -v
