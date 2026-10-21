@@ -16,4 +16,4 @@ uv run manage.py --deploy
 
 Builds reuse this folder, preserve this README, and remove the old ZIP before
 fetching. Do not run builds concurrently. The current [map](../tools/quest-data-fetcher/quest_map.json)
-covers The Light's Summons only; full dialogue and narrative order are unverified.
+covers 17 scanned campaign chapters; full dialogue and narrative order are unverified.

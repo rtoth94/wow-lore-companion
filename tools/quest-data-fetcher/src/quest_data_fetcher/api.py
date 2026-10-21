@@ -12,6 +12,10 @@ from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
+class ResourceNotFound(RuntimeError):
+    """The API returned HTTP 404 for a resource."""
+
+
 class NoRedirects(HTTPRedirectHandler):
     # Never forward credentials to a redirected destination.
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -30,7 +34,8 @@ def request_json(request, stage):
             429: "Rate limited; wait before trying again.",
         }
         # Do not print response bodies or request headers: they may contain secrets.
-        raise RuntimeError(
+        error_type = ResourceNotFound if error.code == 404 else RuntimeError
+        raise error_type(
             f"{stage}: HTTP {error.code}. "
             + hints.get(error.code, "Request failed; try again later.")
         ) from None

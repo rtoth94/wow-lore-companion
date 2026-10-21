@@ -2,7 +2,7 @@
 import json
 import time
 from datetime import datetime, timezone
-from .api import authenticate, fetch_quest
+from .api import ResourceNotFound, authenticate, fetch_quest
 
 def lua(value):
     """Serialize the small data types we use, with Lua 5.1 string escapes."""
@@ -31,12 +31,17 @@ def lua(value):
 
 def write_lua(export_dir):
     report = json.loads((export_dir / "manifest.json").read_text(encoding="utf-8"))
-    if any(item["status"] != "ok" for item in report["results"]):
+    if any(item["status"] not in ("ok", "unavailable") for item in report["results"]):
         raise RuntimeError("Export has failed requests; no package was created.")
+    unavailable = {item["quest_id"] for item in report["results"] if item["status"] == "unavailable"}
     mapping = report["map"]
     quests = {}
     for chapter in mapping["chapters"]:
         for quest_id in chapter["quest_ids"]:
+            if quest_id in unavailable:
+                # Preserve membership without inventing a title or original text.
+                quests[quest_id] = {"descriptionAvailable": False}
+                continue
             quest = json.loads((export_dir / f"quest-{quest_id}.json").read_text(encoding="utf-8"))
             if quest.get("id") != quest_id:
                 raise RuntimeError("Exported quest ID mismatch; no package was created.")
@@ -99,6 +104,10 @@ def generate(map_path, output, region, env_file):
             results.append({"quest_id": quest_id, "status": "ok", "file": filename,
                             "has_description": available})
             print(f"[{index}/{len(ids)}] {quest_id}: saved; description {'present' if available else 'unavailable'}")
+        except ResourceNotFound as error:
+            results.append({"quest_id": quest_id, "status": "unavailable",
+                            "has_description": False, "error": str(error)})
+            print(f"[{index}/{len(ids)}] {quest_id}: unavailable (HTTP 404); keeping quest ID")
         except RuntimeError as error:
             results.append({"quest_id": quest_id, "status": "failed", "error": str(error)})
             print(f"[{index}/{len(ids)}] {quest_id}: {error}")
@@ -108,7 +117,8 @@ def generate(map_path, output, region, env_file):
               "map": mapping, "results": results}
     (output / "manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     failed = sum(item["status"] == "failed" for item in results)
-    print(f"Saved {len(results) - failed}/{len(ids)} quests. Manifest: {output / 'manifest.json'}")
+    unavailable = sum(item["status"] == "unavailable" for item in results)
+    print(f"Saved {len(results) - failed - unavailable}/{len(ids)} quests; {unavailable} unavailable; {failed} failed. Manifest: {output / 'manifest.json'}")
     if failed:
         raise RuntimeError("Quest requests failed; inspect manifest.json. No Lua data generated.")
     write_lua(output)
