@@ -513,8 +513,9 @@ Development environment:
 
 Current status:
 
-- Version 0.2.2: campaign recap browser with section navigation and reading preferences.
-- Bundled original English quest descriptions for The Light's Summons.
+- Version 0.2.3: chapter context, quest selector, and per-character chapter/tab/quest bookmarks.
+- Bundled original English quest data for 17 scanned Midnight chapters; title matching remains English-only.
+- Separate summary/quest text availability labels and specific unavailable-data messages.
 - Build/deploy tooling, campaign request timeout, and deployment rollback implemented.
 - Quest narrative order, full dialogue, and completion indicators remain unverified or unimplemented.
 
@@ -524,7 +525,7 @@ Current milestone:
 
 Current task:
 
-**Validate version 0.2.2 in WoW: timeout/retry behavior, bookmarks, and existing reading views.**
+**Validate version 0.2.3 in WoW: dropdown navigation, bookmark restoration, spoiler controls, availability labels, and layout.**
 
 Do not implement subsequent steps automatically.
 

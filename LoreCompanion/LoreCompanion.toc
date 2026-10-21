@@ -1,6 +1,6 @@
 ## Interface: 120105
 ## Title: Lore Companion
-## Version: 0.2.2
+## Version: 0.2.3
 ## SavedVariables: LoreCompanionSettings
 ## SavedVariablesPerCharacter: LoreCompanionCharacter
 ## Notes: Explore campaign stories and chapter summaries.

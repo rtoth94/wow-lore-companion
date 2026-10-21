@@ -1,4 +1,4 @@
-# Quest Data Fetcher 0.2.2
+# Quest Data Fetcher 0.2.3
 
 Fetch original Blizzard quest descriptions and generate JSON responses,
 `manifest.json`, and `QuestData.lua`. This package only generates data;
