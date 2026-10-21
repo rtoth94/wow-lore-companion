@@ -56,21 +56,36 @@ def deploy(archive_path, addons):
             path = PurePosixPath(name)
             if len(path.parts) != 2 or path.parts[0] != "LoreCompanion" or path.name in (".", "..") or "\\" in name:
                 raise ValueError("ZIP contains an unsupported addon path.")
-        # Validate and stage all contents before touching the installed addon.
-        with tempfile.TemporaryDirectory(prefix="lore-deploy-") as staging:
+        # Stage on the destination filesystem so directory renames stay local.
+        staging = Path(tempfile.mkdtemp(prefix=".lore-deploy-", dir=addons))
+        replacement = staging / "replacement"
+        backup = staging / "backup"
+        try:
+            replacement.mkdir()
             for name in names:
-                target = Path(staging) / PurePosixPath(name).name
+                target = replacement / PurePosixPath(name).name
                 target.write_bytes(archive.read(name))
             destination = Path(addons) / "LoreCompanion"
             if destination.is_symlink():
                 raise ValueError("Installed addon folder is a symlink; choose a regular AddOns directory.")
-            destination.mkdir(exist_ok=True)
-            for source in Path(staging).iterdir():
-                target = destination / source.name
-                if target.is_symlink():
-                    raise ValueError("Installed addon contains a symlink; deployment stopped.")
-            for source in Path(staging).iterdir():
-                shutil.copy2(source, destination / source.name)
+            if destination.exists():
+                if not destination.is_dir():
+                    raise ValueError("Installed addon path is not a directory.")
+                destination.rename(backup)
+            try:
+                replacement.rename(destination)
+            except OSError:
+                if backup.exists():
+                    backup.rename(destination)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup)
+        finally:
+            # Never delete the old installation if restoring it also failed.
+            if backup.exists():
+                print(f"Previous addon preserved at {backup}", file=sys.stderr)
+            else:
+                shutil.rmtree(staging)
     print(f"Deployed {archive_path}\nto {destination}")
 
 
