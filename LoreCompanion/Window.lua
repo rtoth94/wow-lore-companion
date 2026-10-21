@@ -90,6 +90,11 @@ local storyTitle = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalLa
 storyTitle:SetPoint("TOPLEFT", 270, -104)
 storyTitle:SetPoint("TOPRIGHT", -20, -104)
 storyTitle:SetJustifyH("LEFT")
+local chapterContext = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+chapterContext:SetPoint("TOPLEFT", 270, -104)
+chapterContext:SetPoint("TOPRIGHT", -38, -104)
+chapterContext:SetJustifyH("LEFT")
+chapterContext:Hide()
 
 -- The scroll child grows with the text; the viewport stays inside the window.
 local scrollFrame = CreateFrame("ScrollFrame", nil, loreWindow)
@@ -215,6 +220,7 @@ local selectedIndex
 local activeTab = "Summary"
 local selectedQuestIndex = 1
 local questCount = 0
+local restoreReading = false
 local tabOffsets = { Summary = 0, Quests = 0 }
 local summaryTab = makeButton("Summary", 92)
 summaryTab:SetPoint("TOPLEFT", 270, -68)
@@ -228,56 +234,115 @@ questsTab:SetScript("OnEnter", function(self)
 end)
 questsTab:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-local function questReadingText()
+-- Share the same matching rules between the reader, menu, and availability labels.
+local function findQuestChapter(section)
     local data = addon.QuestData
     if not data then
-        return "Bundled quest data is not installed. Build and deploy the packaged addon."
+        return nil, "Quest data is not installed. Install LoreCompanion.zip from the GitHub release assets.", "Quest data not installed"
     end
     if data.campaignID ~= 270 then
-        return "No bundled quest data available for this chapter."
+        return nil, "The installed quest data belongs to a different campaign. Install the matching addon release.", "Quest data mismatch"
     end
     local matches = 0
-    for _, section in ipairs(visibleSections) do
-        if section.title == selectedSection.title then matches = matches + 1 end
+    for _, candidate in ipairs(visibleSections) do
+        if candidate.title == section.title then matches = matches + 1 end
     end
     if matches ~= 1 then
-        return "Quest mapping is unavailable for this repeated heading."
+        return nil, "This heading appears more than once in the chapter list, so its quests cannot be identified safely.", "Quest match ambiguous"
     end
     local chapter
     -- Match only a unique bundled heading. This does not verify quest membership
     -- or narrative order in the scanned data.
     for _, candidate in ipairs(data.chapters or {}) do
-        if candidate.title == selectedSection.title then
+        if candidate.title == section.title then
             if chapter then
-                return "Quest mapping is unavailable for this repeated heading."
+                return nil, "More than one bundled chapter uses this heading, so its quests cannot be identified safely.", "Quest match ambiguous"
             end
             chapter = candidate
         end
     end
-    if not chapter or not chapter.questIDs or #chapter.questIDs == 0 then
-        return "No bundled quest data available for this chapter."
+    if not chapter then
+        return nil, "No bundled chapter matches this heading. Bundled chapter titles are English; this heading may use different wording or have no mapped quests.", "Quest match unavailable"
     end
-    questCount = #chapter.questIDs
-    selectedQuestIndex = math.max(1, math.min(selectedQuestIndex, questCount))
+    if not chapter.questIDs or #chapter.questIDs == 0 then
+        return nil, "This chapter is mapped, but no quest IDs are included in the installed data.", "No mapped quests"
+    end
+    return chapter
+end
+
+local function questTitle(questID)
+    local quest = addon.QuestData.quests and addon.QuestData.quests[questID]
+    return quest and quest.title and quest.title ~= "" and quest.title or ("Quest " .. questID)
+end
+
+local function hasDescription(questID)
+    local quest = addon.QuestData.quests and addon.QuestData.quests[questID]
+    return quest and type(quest.description) == "string" and quest.description:find("%S") ~= nil
+end
+
+local function questReadingText(chapter, reason)
+    if not chapter then return reason end
     local questID = chapter.questIDs[selectedQuestIndex]
-    local quest = data.quests and data.quests[questID]
-    local title = quest and quest.title
-    storyTitle:SetText(title and title ~= "" and title or ("Quest " .. questID))
-    local description = quest and quest.description
-    return description and description ~= "" and description or "Original quest description unavailable."
+    local quest = addon.QuestData.quests and addon.QuestData.quests[questID]
+    storyTitle:SetText(questTitle(questID))
+    return hasDescription(questID) and quest.description
+        or "The original description for quest " .. questID .. " is not included in this release. You can select another quest; no replacement text has been generated."
+end
+
+local questSelector = CreateFrame("DropdownButton", nil, loreWindow, "WowStyle1DropdownTemplate")
+questSelector:SetPoint("LEFT", questsTab, "RIGHT", 8, 0)
+questSelector:SetWidth(140)
+questSelector:OverrideText("Choose quest")
+questSelector:Hide()
+
+local function saveReading(chapter)
+    -- Never persist opt-in spoiler chapters or overwrite a bookmark during loading.
+    if not loreWindow:IsShown() or not selectedSection or selectedSection.unavailable
+        or type(LoreCompanionCharacter) ~= "table" then return end
+    local occurrence = 0
+    for index = 1, selectedIndex do
+        if visibleSections[index].title == selectedSection.title then occurrence = occurrence + 1 end
+    end
+    LoreCompanionCharacter.midnight = {
+        title = selectedSection.title, occurrence = occurrence, tab = activeTab,
+        questID = chapter and chapter.questIDs[selectedQuestIndex] or nil,
+    }
 end
 
 local function renderTab()
     summaryTab:SetEnabled(activeTab ~= "Summary")
     questsTab:SetEnabled(activeTab ~= "Quests")
     questCount = 0
+    local chapter, reason
+    if selectedSection then chapter, reason = findQuestChapter(selectedSection) end
+    if chapter then
+        questCount = #chapter.questIDs
+        selectedQuestIndex = math.max(1, math.min(selectedQuestIndex, questCount))
+    end
+    local isQuests = activeTab == "Quests"
+    chapterContext:SetShown(isQuests and selectedSection ~= nil)
+    chapterContext:SetText(selectedSection and selectedSection.title or "")
+    storyTitle:ClearAllPoints()
+    if isQuests and selectedSection then
+        storyTitle:SetPoint("TOPLEFT", chapterContext, "BOTTOMLEFT", 0, -8)
+        storyTitle:SetPoint("TOPRIGHT", chapterContext, "BOTTOMRIGHT", 0, -8)
+    else
+        storyTitle:SetPoint("TOPLEFT", 270, -104)
+        storyTitle:SetPoint("TOPRIGHT", -38, -104)
+    end
     storyTitle:SetText(selectedSection and selectedSection.title or "Midnight")
     local text = campaignText
     if selectedSection then
-        text = activeTab == "Summary" and selectedSection.text or questReadingText()
+        if isQuests then
+            storyTitle:SetText("Quest text unavailable")
+            text = questReadingText(chapter, reason)
+        else
+            text = selectedSection.text
+        end
     end
+    questSelector:SetShown(isQuests and chapter ~= nil)
+    if isQuests and chapter then questSelector:GenerateMenu() end
     -- The chapter list always changes chapters; these buttons page the active view.
-    local isQuests = activeTab == "Quests"
     local index = isQuests and selectedQuestIndex or (selectedIndex or 0)
     local count = isQuests and questCount or #visibleSections
     previousButton:SetText(isQuests and "Prev quest" or "Previous")
@@ -287,7 +352,24 @@ local function renderTab()
     positionLabel:SetText(count > 0 and ((isQuests and "Quest " or "Section ") .. index .. " of " .. count) or "")
     displayText(text)
     scrollFrame:SetVerticalScroll(math.max(0, math.min(tabOffsets[activeTab], scrollFrame:GetVerticalScrollRange())))
+    saveReading(chapter)
 end
+
+questSelector:SetupMenu(function(_, rootDescription)
+    local chapter = selectedSection and findQuestChapter(selectedSection)
+    if not chapter then return end
+    rootDescription:SetScrollMode(240)
+    for index, questID in ipairs(chapter.questIDs) do
+        local label = index .. ". " .. questTitle(questID)
+        if not hasDescription(questID) then label = label .. " (text unavailable)" end
+        rootDescription:CreateRadio(label, function(value) return value == selectedQuestIndex end,
+            function(value)
+                selectedQuestIndex = value
+                tabOffsets.Quests = 0
+                renderTab()
+            end, index)
+    end
+end)
 
 local function switchTab(tab)
     tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
@@ -297,7 +379,7 @@ end
 summaryTab:SetScript("OnClick", function() switchTab("Summary") end)
 questsTab:SetScript("OnClick", function() switchTab("Quests") end)
 
-local function selectSection(section)
+local function selectSection(section, bookmark)
     if selectedSection ~= section then
         tabOffsets = { Summary = 0, Quests = 0 }
         selectedQuestIndex = 1
@@ -305,21 +387,21 @@ local function selectSection(section)
         tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
     end
     selectedSection = section
+    if bookmark then
+        activeTab = bookmark.tab == "Quests" and "Quests" or "Summary"
+        local chapter = findQuestChapter(section)
+        if chapter then
+            for index, questID in ipairs(chapter.questIDs) do
+                if questID == bookmark.questID then selectedQuestIndex = index; break end
+            end
+        end
+    end
     for index, item in ipairs(visibleSections) do
         if item == section then selectedIndex = index; break end
     end
     previousButton:SetEnabled(selectedIndex > 1)
     nextButton:SetEnabled(selectedIndex < #visibleSections)
     positionLabel:SetText("Section " .. selectedIndex .. " of " .. #visibleSections)
-    -- Bookmark only returned lore, never an opt-in placeholder. Count duplicate
-    -- headings so identical titles remain distinct without inventing chapter IDs.
-    if not section.unavailable and type(LoreCompanionCharacter) == "table" then
-        local occurrence = 0
-        for index = 1, selectedIndex do
-            if visibleSections[index].title == section.title then occurrence = occurrence + 1 end
-        end
-        LoreCompanionCharacter.midnight = { title = section.title, occurrence = occurrence }
-    end
     -- Scroll only when the selected row lies outside the navigation viewport.
     local row = chapterButtons[selectedIndex]
     local offset = chapterScroll:GetVerticalScroll()
@@ -381,6 +463,10 @@ local function refreshContent()
             button.label:SetPoint("TOPLEFT", 8, -8)
             button.label:SetWidth(188)
             button.label:SetJustifyH("LEFT")
+            button.status = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            button.status:SetPoint("TOPLEFT", button.label, "BOTTOMLEFT", 0, -4)
+            button.status:SetWidth(188)
+            button.status:SetJustifyH("LEFT")
             button.selection = button:CreateTexture(nil, "BACKGROUND")
             button.selection:SetAllPoints()
             button.selection:SetColorTexture(0.6, 0.45, 0.15, 0.35)
@@ -400,9 +486,19 @@ local function refreshContent()
         end
         button.section = section
         -- Display order is not a verified chapter number or completion status.
-        button.label:SetText(index .. ". " .. section.title .. (section.unavailable and "\nNo summary" or ""))
+        button.label:SetText(index .. ". " .. section.title)
+        local chapter, _, questStatus = findQuestChapter(section)
+        if chapter then
+            local available = 0
+            for _, questID in ipairs(chapter.questIDs) do
+                if hasDescription(questID) then available = available + 1 end
+            end
+            questStatus = "Quest text: " .. available .. "/" .. #chapter.questIDs
+        end
+        local hasSummary = not section.unavailable and not section.summaryUnavailable
+        button.status:SetText((hasSummary and "Summary available" or "No summary") .. "\n" .. questStatus)
         button.label:SetTextColor(section.unavailable and 0.6 or 1, section.unavailable and 0.6 or 0.82, section.unavailable and 0.6 or 0.3)
-        button:SetHeight(math.max(36, button.label:GetStringHeight() + 16))
+        button:SetHeight(button.label:GetStringHeight() + button.status:GetStringHeight() + 20)
         button:ClearAllPoints()
         button.top = y
         button:SetPoint("TOPLEFT", 0, -y)
@@ -420,7 +516,7 @@ local function refreshContent()
     if #visibleSections > 0 then
         local restoredSection
         local bookmark = type(LoreCompanionCharacter) == "table" and LoreCompanionCharacter.midnight
-        if not selectionStillVisible and type(bookmark) == "table" then
+        if restoreReading and type(bookmark) == "table" then
             local occurrence = 0
             for _, section in ipairs(visibleSections) do
                 if not section.unavailable and section.title == bookmark.title then
@@ -429,7 +525,9 @@ local function refreshContent()
                 end
             end
         end
-        selectSection(selectionStillVisible and selectedSection or restoredSection or visibleSections[1])
+        restoreReading = false
+        selectSection(selectionStillVisible and selectedSection or restoredSection or visibleSections[1],
+            restoredSection and bookmark or nil)
     else
         selectedSection = nil
         selectedIndex = nil
@@ -447,7 +545,6 @@ loreWindow:SetScript("OnHide", function()
     -- Require fresh consent after closing; another player/character must not
     -- inherit an open spoiler list. No preference is saved between sessions.
     unfinishedCheckbox:SetChecked(false)
-    refreshContent()
 end)
 
 
@@ -503,6 +600,8 @@ end
 
 function addon.Window.Open()
     activeTab = "Summary"
+    selectedQuestIndex = 1
+    restoreReading = true
     tabOffsets = { Summary = 0, Quests = 0 }
     loreWindow:Show()
     selectedSection = nil

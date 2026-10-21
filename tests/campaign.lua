@@ -33,6 +33,14 @@ addon.Campaign.Request(update)
 timers[3]()
 assert(addon.Campaign.GetSections(false)[1].text == "Original text")
 assert(not message:find("timed out", 1, true), "Completed request timed out")
+assert(not addon.Campaign.GetSections(false)[1].summaryUnavailable)
+
+C_LoreText.RequestLoreTextForCampaignID = function(id)
+    eventHandler(nil, nil, id, { { text = "Heading without body", isHeader = true } })
+end
+addon.Campaign.Request(update)
+assert(addon.Campaign.GetSections(false)[1].summaryUnavailable,
+    "Heading without body was marked as having summary text")
 
 C_CampaignInfo = nil
 local sections = addon.Campaign.GetSections(true)

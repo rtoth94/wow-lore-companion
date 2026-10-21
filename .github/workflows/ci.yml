@@ -29,6 +29,9 @@ jobs:
       - name: Check campaign request handling
         run: lua5.1 tests/campaign.lua
 
+      - name: Check reader navigation and bookmarks
+        run: lua5.1 tests/window.lua
+
       - name: Check quest generation and deployment
         env:
           PYTHONPATH: .:tools/quest-data-fetcher/src

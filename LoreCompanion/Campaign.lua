@@ -122,6 +122,7 @@ loreFrame:SetScript("OnEvent", function(self, event, receivedCampaignID, textEnt
         end
     end
     for _, item in ipairs(loreSections) do
+        item.summaryUnavailable = #item.paragraphs == 0
         item.text = #item.paragraphs > 0 and table.concat(item.paragraphs, "\n\n") or "No summary text was returned for this heading."
     end
     if onUpdate then onUpdate("No campaign text was returned.") end
