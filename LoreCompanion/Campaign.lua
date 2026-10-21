@@ -9,7 +9,7 @@ local loreSections = {}
 local onUpdate
 local requestNumber = 0
 
--- Diagnostic only: matching numeric IDs do not prove chapter membership.
+-- Blizzard's CampaignChapterMixin uses chapter IDs as questline IDs.
 function addon.Campaign.Scan(writeLine)
     -- Send diagnostics to the copy window, or chat when no receiver is supplied.
     local print = writeLine or print
@@ -24,11 +24,19 @@ function addon.Campaign.Scan(writeLine)
         return
     end
     print("Lore Companion: campaign " .. campaignID .. ", " .. #chapterIDs .. " chapters (spoilers).")
-    print("Candidate quest lists only: membership, completeness, and narrative order are unverified.")
+    if addon.Story then addon.Story.Refresh() end
+    print("Client questline lists: narrative order and expansion-wide completeness remain unverified.")
     local canQueryQuests = C_QuestLine and type(C_QuestLine.GetQuestLineQuests) == "function"
     for _, chapterID in ipairs(chapterIDs) do
         local info = C_CampaignInfo.GetCampaignChapterInfo(chapterID)
         print("Chapter " .. chapterID .. ": " .. (info and info.name or "Metadata unavailable"))
+        for _, bundled in ipairs(addon.QuestData and addon.QuestData.chapters or {}) do
+            if bundled.chapterID == chapterID and addon.Story then
+                local checked = addon.Story.CheckChapter(bundled)
+                print("  " .. addon.Story.VerificationText(checked))
+                print("  Bundled quests: " .. #(bundled.questIDs or {}) .. "; displayed quests: " .. #(checked.questIDs or {}))
+            end
+        end
         -- Inspect returned fields instead of assuming a questline field exists.
         for key, value in pairs(info or {}) do
             print("  " .. tostring(key) .. " = " .. tostring(value))
@@ -37,7 +45,7 @@ function addon.Campaign.Scan(writeLine)
             -- pcall catches an API error so the remaining chapters can be inspected.
             local ok, quests = pcall(C_QuestLine.GetQuestLineQuests, chapterID)
             if ok and type(quests) == "table" then
-                print("  Testing questline " .. chapterID .. ": " .. #quests .. " candidate quests")
+                print("  Client questline " .. chapterID .. ": " .. #quests .. " quests")
                 -- Short lines keep longer lists readable in the chat window.
                 for first = 1, #quests, 10 do
                     local ids = {}
@@ -48,7 +56,7 @@ function addon.Campaign.Scan(writeLine)
                 end
                 if #quests == 0 then print("  No IDs returned; this does not prove the chapter has no quests.") end
             else
-                print("  Candidate quest query failed or returned unavailable data.")
+                print("  Questline query failed or returned unavailable data.")
             end
         end
     end
@@ -82,6 +90,7 @@ function addon.Campaign.GetSections(showUnavailable)
                     -- it does not assign lore to an ID or establish completion.
                     if not returnedTitles[name] then
                         table.insert(visibleSections, {
+                            chapterID = chapterID,
                             title = name,
                             text = "No summary is available for this chapter in the returned campaign recap.",
                             unavailable = true,

@@ -95,6 +95,11 @@ chapterContext:SetPoint("TOPLEFT", 270, -104)
 chapterContext:SetPoint("TOPRIGHT", -38, -104)
 chapterContext:SetJustifyH("LEFT")
 chapterContext:Hide()
+local questStatus = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+questStatus:SetPoint("TOPLEFT", storyTitle, "BOTTOMLEFT", 0, -8)
+questStatus:SetPoint("TOPRIGHT", storyTitle, "BOTTOMRIGHT", 0, -8)
+questStatus:SetJustifyH("LEFT")
+questStatus:Hide()
 
 -- The scroll child grows with the text; the viewport stays inside the window.
 local scrollFrame = CreateFrame("ScrollFrame", nil, loreWindow)
@@ -230,55 +235,20 @@ questsTab:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Original quest descriptions (English)")
     GameTooltip:AddLine("Full dialogue is not included. Quest order has not been verified as narrative order.", 1, 1, 1, true)
+    if selectedSection then
+        local chapter = addon.Story.FindChapter(selectedSection, visibleSections)
+        if chapter then GameTooltip:AddLine(addon.Story.VerificationText(chapter), 1, 1, 1, true) end
+    end
     GameTooltip:Show()
 end)
 questsTab:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
--- Share the same matching rules between the reader, menu, and availability labels.
+-- Keep the UI and search on the same chapter matching rules.
 local function findQuestChapter(section)
-    local data = addon.QuestData
-    if not data then
-        return nil, "Quest data is not installed. Install LoreCompanion.zip from the GitHub release assets.", "Quest data not installed"
-    end
-    if data.campaignID ~= 270 then
-        return nil, "The installed quest data belongs to a different campaign. Install the matching addon release.", "Quest data mismatch"
-    end
-    local matches = 0
-    for _, candidate in ipairs(visibleSections) do
-        if candidate.title == section.title then matches = matches + 1 end
-    end
-    if matches ~= 1 then
-        return nil, "This heading appears more than once in the chapter list, so its quests cannot be identified safely.", "Quest match ambiguous"
-    end
-    local chapter
-    -- Match only a unique bundled heading. This does not verify quest membership
-    -- or narrative order in the scanned data.
-    for _, candidate in ipairs(data.chapters or {}) do
-        if candidate.title == section.title then
-            if chapter then
-                return nil, "More than one bundled chapter uses this heading, so its quests cannot be identified safely.", "Quest match ambiguous"
-            end
-            chapter = candidate
-        end
-    end
-    if not chapter then
-        return nil, "No bundled chapter matches this heading. Bundled chapter titles are English; this heading may use different wording or have no mapped quests.", "Quest match unavailable"
-    end
-    if not chapter.questIDs or #chapter.questIDs == 0 then
-        return nil, "This chapter is mapped, but no quest IDs are included in the installed data.", "No mapped quests"
-    end
-    return chapter
+    return addon.Story.FindChapter(section, visibleSections)
 end
-
-local function questTitle(questID)
-    local quest = addon.QuestData.quests and addon.QuestData.quests[questID]
-    return quest and quest.title and quest.title ~= "" and quest.title or ("Quest " .. questID)
-end
-
-local function hasDescription(questID)
-    local quest = addon.QuestData.quests and addon.QuestData.quests[questID]
-    return quest and type(quest.description) == "string" and quest.description:find("%S") ~= nil
-end
+local questTitle = addon.Story.QuestTitle
+local hasDescription = addon.Story.HasDescription
 
 local function questReadingText(chapter, reason)
     if not chapter then return reason end
@@ -320,6 +290,14 @@ local function renderTab()
         selectedQuestIndex = math.max(1, math.min(selectedQuestIndex, questCount))
     end
     local isQuests = activeTab == "Quests"
+    questStatus:SetShown(isQuests and chapter ~= nil)
+    scrollFrame:ClearAllPoints()
+    scrollFrame:SetPoint("TOPLEFT", isQuests and chapter and questStatus or storyTitle, "BOTTOMLEFT", 0, -16)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -38, 70)
+    if chapter then
+        local status = addon.Story.QuestStatus(chapter.questIDs[selectedQuestIndex])
+        questStatus:SetText(status .. " • " .. (chapter.clientVerified and "Client quest list" or "Bundled list (unverified)"))
+    end
     chapterContext:SetShown(isQuests and selectedSection ~= nil)
     chapterContext:SetText(selectedSection and selectedSection.title or "")
     storyTitle:ClearAllPoints()
@@ -360,7 +338,7 @@ questSelector:SetupMenu(function(_, rootDescription)
     if not chapter then return end
     rootDescription:SetScrollMode(240)
     for index, questID in ipairs(chapter.questIDs) do
-        local label = index .. ". " .. questTitle(questID)
+        local label = index .. ". " .. questTitle(questID) .. " — " .. addon.Story.QuestStatus(questID)
         if not hasDescription(questID) then label = label .. " (text unavailable)" end
         rootDescription:CreateRadio(label, function(value) return value == selectedQuestIndex end,
             function(value)
@@ -427,6 +405,84 @@ local function selectSection(section, bookmark)
     end
 end
 
+local function navigateTo(result)
+    selectSection(result.section)
+    activeTab = result.tab
+    if result.questID then
+        local chapter = findQuestChapter(result.section)
+        for index, questID in ipairs(chapter and chapter.questIDs or {}) do
+            if questID == result.questID then selectedQuestIndex = index; break end
+        end
+    end
+    tabOffsets = { Summary = 0, Quests = 0 }
+    renderTab()
+end
+
+local refreshContent
+local searchLabel = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+searchLabel:SetPoint("TOPLEFT", 20, -108)
+searchLabel:SetText("Search")
+local searchBox = CreateFrame("EditBox", nil, loreWindow, "InputBoxTemplate")
+searchBox:SetPoint("TOPLEFT", 72, -100)
+searchBox:SetSize(156, 26)
+searchBox:SetAutoFocus(false)
+searchBox:SetMaxLetters(100)
+local searchResults = CreateFrame("DropdownButton", nil, loreWindow, "WowStyle1DropdownTemplate")
+searchResults:SetPoint("TOPLEFT", 20, -130)
+searchResults:SetWidth(208)
+searchResults:OverrideText("Search results")
+searchResults:Hide()
+
+local function refreshSearch()
+    local text = searchBox:GetText() or ""
+    local searching = text:find("%S") ~= nil
+    local results = addon.Story.Search(visibleSections, text)
+    searchResults:SetShown(searching)
+    searchResults:SetEnabled(#results > 0)
+    searchResults:OverrideText(#results > 0 and ("Results: " .. #results) or "No matches")
+    searchResults:GenerateMenu()
+    chapterScroll:ClearAllPoints()
+    chapterScroll:SetPoint("TOPLEFT", 20, searching and -168 or -138)
+    chapterScroll:SetPoint("BOTTOMLEFT", 20, 35)
+end
+searchResults:SetupMenu(function(_, rootDescription)
+    rootDescription:SetScrollMode(240)
+    for _, result in ipairs(addon.Story.Search(visibleSections, searchBox:GetText() or "")) do
+        rootDescription:CreateButton(result.label, navigateTo, result)
+    end
+end)
+searchBox:SetScript("OnTextChanged", refreshSearch)
+searchBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+searchBox:SetScript("OnEscapePressed", function(self)
+    self:SetText("")
+    self:ClearFocus()
+end)
+
+local function refreshStory()
+    local oldChapter = selectedSection and findQuestChapter(selectedSection)
+    local questID = oldChapter and oldChapter.questIDs[selectedQuestIndex]
+    tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
+    addon.Story.Refresh()
+    refreshContent()
+    local chapter = selectedSection and findQuestChapter(selectedSection)
+    if chapter and questID then
+        selectedQuestIndex = 1
+        for index, id in ipairs(chapter.questIDs) do
+            if id == questID then selectedQuestIndex = index; break end
+        end
+    end
+    renderTab()
+end
+
+local whereButton = makeButton("Where am I?", 112)
+whereButton:SetPoint("TOPLEFT", 116, -68)
+whereButton:SetScript("OnClick", function()
+    refreshStory()
+    local result, message = addon.Story.Current(visibleSections)
+    if result then navigateTo(result) end
+    if message then print("Lore Companion: " .. message) end
+end)
+
 previousButton:SetScript("OnClick", function()
     if activeTab == "Quests" then
         if selectedQuestIndex > 1 then
@@ -450,7 +506,7 @@ nextButton:SetScript("OnClick", function()
     if selectedIndex and visibleSections[selectedIndex + 1] then selectSection(visibleSections[selectedIndex + 1]) end
 end)
 
-local function refreshContent()
+refreshContent = function()
     visibleSections = addon.Campaign.GetSections(unfinishedCheckbox:GetChecked())
     local selectionStillVisible = false
     local y = 0
@@ -511,6 +567,7 @@ local function refreshContent()
         chapterButtons[index].section = nil
     end
     chapterContent:SetHeight(math.max(1, y))
+    refreshSearch()
     chapterScroll:UpdateScrollChildRect()
     chapterScroll:SetVerticalScroll(math.min(chapterScroll:GetVerticalScroll(), chapterScroll:GetVerticalScrollRange()))
     if #visibleSections > 0 then
@@ -545,6 +602,21 @@ loreWindow:SetScript("OnHide", function()
     -- Require fresh consent after closing; another player/character must not
     -- inherit an open spoiler list. No preference is saved between sessions.
     unfinishedCheckbox:SetChecked(false)
+    searchBox:SetText("")
+    searchBox:ClearFocus()
+end)
+
+local progressEvents = CreateFrame("Frame")
+progressEvents:RegisterEvent("QUEST_LOG_UPDATE")
+local progressUpdatePending = false
+progressEvents:SetScript("OnEvent", function()
+    if progressUpdatePending or not loreWindow:IsShown() then return end
+    progressUpdatePending = true
+    C_Timer.After(0.2, function()
+        progressUpdatePending = false
+        if not loreWindow:IsShown() then return end
+        refreshStory()
+    end)
 end)
 
 
@@ -599,6 +671,7 @@ function addon.Window.ShowScan(text)
 end
 
 function addon.Window.Open()
+    addon.Story.Refresh()
     activeTab = "Summary"
     selectedQuestIndex = 1
     restoreReading = true

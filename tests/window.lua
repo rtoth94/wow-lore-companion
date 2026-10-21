@@ -13,10 +13,14 @@ for _, name in ipairs({ "SetPoint", "ClearAllPoints", "EnableMouse", "SetResizab
     "SetHighlightTexture", "SetPushedTexture", "SetColorTexture", "SetAllPoints",
     "SetJustifyH", "SetJustifyV", "SetFont", "SetSpacing", "EnableMouseWheel",
     "SetOrientation", "SetMinMaxValues", "SetAlpha", "SetScrollChild",
-    "UpdateScrollChildRect", "UnregisterEvent" }) do
+    "UpdateScrollChildRect", "UnregisterEvent", "SetAutoFocus", "SetMaxLetters", "ClearFocus" }) do
     methods[name] = function() end
 end
-function methods:SetText(text) self.text = text end
+function methods:SetText(text)
+    self.text = text
+    if self.scripts.OnTextChanged then self.scripts.OnTextChanged(self) end
+end
+function methods:GetText() return self.text or "" end
 function methods:SetTextColor() end
 function methods:SetSize(width, height) self.width, self.height = width, height end
 function methods:SetWidth(width) self.width = width end
@@ -57,6 +61,9 @@ function methods:GenerateMenu()
         SetScrollMode = function(_, extent) owner.menuExtent = extent end,
         CreateRadio = function(_, label, isSelected, choose, value)
             table.insert(owner.items, { label = label, isSelected = isSelected, choose = choose, value = value })
+        end,
+        CreateButton = function(_, label, choose, value)
+            table.insert(owner.items, { label = label, choose = choose, value = value })
         end,
     })
 end
@@ -108,6 +115,7 @@ function addon.Campaign.Request(update)
     ready, callback = false, update
     update("Loading")
 end
+assert(loadfile("LoreCompanion/Story.lua"))("LoreCompanion", addon)
 assert(loadfile("LoreCompanion/Window.lua"))("LoreCompanion", addon)
 local function receive()
     ready = true
@@ -228,4 +236,64 @@ data.chapters[2].questIDs = {}
 addon.Window.Open()
 receive()
 assert(contains("no quest IDs are included"))
+
+-- Exercise actual UI handlers for the new progress, current-story, and search controls.
+data.chapters[1].chapterID = 1
+data.chapters[2].chapterID = 2
+data.chapters[2].questIDs = { 40 }
+data.chapters[3].chapterID = 3
+local liveOrder = { 20, 10, 30 }
+local completed = false
+C_CampaignInfo = {
+    GetChapterIDs = function() return { 1, 2, 3 } end,
+    GetCampaignChapterInfo = function(id) return { name = data.chapters[id].title } end,
+    GetCurrentChapterID = function() return 1 end,
+}
+C_QuestLine = { GetQuestLineQuests = function(id) return id == 1 and liveOrder or data.chapters[id].questIDs end }
+C_QuestLog = {
+    IsQuestFlaggedCompleted = function(id) return id == 20 and completed end,
+    IsOnQuest = function(id) return id == 20 and not completed end,
+}
+local pending
+C_Timer = { After = function(_, handler) pending = handler end }
+addon.Window.Open()
+receive()
+click("Where am I?")
+assert(LoreCompanionCharacter.midnight.questID == 20)
+assert(contains("Active • Client quest list"))
+
+local searchBox, results, progressEvents
+for _, value in ipairs(objects) do
+    if value.kind == "EditBox" then searchBox = value end
+    if value.kind == "DropdownButton" and value ~= selector then results = value end
+    if value.QUEST_LOG_UPDATE then progressEvents = value end
+end
+searchBox:SetText("Original other")
+assert(#results.items == 1 and results.shown)
+results.items[1].choose(results.items[1].value)
+assert(LoreCompanionCharacter.midnight.questID == 40)
+searchBox:SetText("future")
+assert(#results.items == 0 and not results.enabled)
+checkbox:SetChecked(true)
+checkbox.scripts.OnClick()
+assert(#results.items > 0)
+checkbox:SetChecked(false)
+checkbox.scripts.OnClick()
+assert(#results.items == 0, "Hidden content remained in search results")
+searchBox.scripts.OnEscapePressed(searchBox)
+assert(not results.shown)
+
+click("Where am I?")
+completed = true
+liveOrder = { 10, 30, 20 }
+progressEvents.scripts.OnEvent()
+assert(pending, "Progress change did not schedule refresh")
+pending()
+assert(contains("Completed • Client quest list"))
+assert(LoreCompanionCharacter.midnight.questID == 20, "Live reorder changed the reading bookmark")
+assert(not find("Next quest", "Button").enabled)
+liveOrder = { 10, 30 }
+progressEvents.scripts.OnEvent()
+pending()
+assert(LoreCompanionCharacter.midnight.questID == 10, "Removed live quest did not fall back to first quest")
 print("Window reading checks passed.")

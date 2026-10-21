@@ -32,6 +32,9 @@ jobs:
       - name: Check reader navigation and bookmarks
         run: lua5.1 tests/window.lua
 
+      - name: Check story progress and search
+        run: lua5.1 tests/story.lua
+
       - name: Check quest generation and deployment
         env:
           PYTHONPATH: .:tools/quest-data-fetcher/src
