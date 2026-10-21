@@ -93,7 +93,7 @@ storyTitle:SetJustifyH("LEFT")
 
 -- The scroll child grows with the text; the viewport stays inside the window.
 local scrollFrame = CreateFrame("ScrollFrame", nil, loreWindow)
-scrollFrame:SetPoint("TOPLEFT", 270, -145)
+scrollFrame:SetPoint("TOPLEFT", storyTitle, "BOTTOMLEFT", 0, -16)
 scrollFrame:SetPoint("BOTTOMRIGHT", -38, 70)
 local scrollContent = CreateFrame("Frame", nil, scrollFrame)
 scrollContent:SetSize(380, 1)
@@ -185,9 +185,9 @@ local function makeButton(label, width)
     button:SetText(label)
     return button
 end
-local previousButton = makeButton("Previous", 82)
+local previousButton = makeButton("Previous", 90)
 previousButton:SetPoint("BOTTOMLEFT", 270, 38)
-local nextButton = makeButton("Next", 70)
+local nextButton = makeButton("Next", 90)
 nextButton:SetPoint("BOTTOMRIGHT", -38, 38)
 local positionLabel = loreWindow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 positionLabel:SetPoint("LEFT", previousButton, "RIGHT", 8, 0)
@@ -213,20 +213,27 @@ local selectedSection
 local visibleSections = {}
 local selectedIndex
 local activeTab = "Summary"
+local selectedQuestIndex = 1
+local questCount = 0
 local tabOffsets = { Summary = 0, Quests = 0 }
 local summaryTab = makeButton("Summary", 92)
 summaryTab:SetPoint("TOPLEFT", 270, -68)
 local questsTab = makeButton("Quests", 82)
 questsTab:SetPoint("LEFT", summaryTab, "RIGHT", 4, 0)
+questsTab:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Original quest descriptions (English)")
+    GameTooltip:AddLine("Full dialogue is not included. Quest order has not been verified as narrative order.", 1, 1, 1, true)
+    GameTooltip:Show()
+end)
+questsTab:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 local function questReadingText()
     local data = addon.QuestData
     if not data then
         return "Bundled quest data is not installed. Build and deploy the packaged addon."
     end
-    -- This single English heading was checked against chapter 5811 in-game.
-    -- Do not infer arbitrary chapter IDs from recap order or matching titles.
-    if data.campaignID ~= 270 or selectedSection.title ~= "The Light's Summons" then
+    if data.campaignID ~= 270 then
         return "No bundled quest data available for this chapter."
     end
     local matches = 0
@@ -237,30 +244,47 @@ local function questReadingText()
         return "Quest mapping is unavailable for this repeated heading."
     end
     local chapter
+    -- Match only a unique bundled heading. This does not verify quest membership
+    -- or narrative order in the scanned data.
     for _, candidate in ipairs(data.chapters or {}) do
-        if candidate.chapterID == 5811 then chapter = candidate; break end
+        if candidate.title == selectedSection.title then
+            if chapter then
+                return "Quest mapping is unavailable for this repeated heading."
+            end
+            chapter = candidate
+        end
     end
     if not chapter or not chapter.questIDs or #chapter.questIDs == 0 then
         return "No bundled quest data available for this chapter."
     end
-    local paragraphs = { "Original quest descriptions (English). Full dialogue is not included.\nQuest order has not been verified as narrative order." }
-    for index, questID in ipairs(chapter.questIDs) do
-        local quest = data.quests and data.quests[questID]
-        local title = quest and quest.title or ("Quest " .. questID)
-        table.insert(paragraphs, index .. ". " .. title)
-        local description = quest and quest.description
-        table.insert(paragraphs, description and description ~= "" and description or "Original quest description unavailable.")
-    end
-    return table.concat(paragraphs, "\n\n")
+    questCount = #chapter.questIDs
+    selectedQuestIndex = math.max(1, math.min(selectedQuestIndex, questCount))
+    local questID = chapter.questIDs[selectedQuestIndex]
+    local quest = data.quests and data.quests[questID]
+    local title = quest and quest.title
+    storyTitle:SetText(title and title ~= "" and title or ("Quest " .. questID))
+    local description = quest and quest.description
+    return description and description ~= "" and description or "Original quest description unavailable."
 end
 
 local function renderTab()
     summaryTab:SetEnabled(activeTab ~= "Summary")
     questsTab:SetEnabled(activeTab ~= "Quests")
+    questCount = 0
+    storyTitle:SetText(selectedSection and selectedSection.title or "Midnight")
     local text = campaignText
     if selectedSection then
         text = activeTab == "Summary" and selectedSection.text or questReadingText()
     end
+    -- The chapter list always changes chapters; these buttons page the active view.
+    local isQuests = activeTab == "Quests"
+    local index = isQuests and selectedQuestIndex or (selectedIndex or 0)
+    local count = isQuests and questCount or #visibleSections
+    previousButton:SetText(isQuests and "Prev quest" or "Previous")
+    nextButton:SetText(isQuests and "Next quest" or "Next")
+    previousButton:SetEnabled(count > 0 and index > 1)
+    nextButton:SetEnabled(count > 0 and index < count)
+    positionLabel:SetText(count > 0 and ((isQuests and "Quest " or "Section ") .. index .. " of " .. count) or "")
     displayText(text)
     scrollFrame:SetVerticalScroll(math.max(0, math.min(tabOffsets[activeTab], scrollFrame:GetVerticalScrollRange())))
 end
@@ -276,6 +300,7 @@ questsTab:SetScript("OnClick", function() switchTab("Quests") end)
 local function selectSection(section)
     if selectedSection ~= section then
         tabOffsets = { Summary = 0, Quests = 0 }
+        selectedQuestIndex = 1
     else
         tabOffsets[activeTab] = scrollFrame:GetVerticalScroll()
     end
@@ -321,9 +346,25 @@ local function selectSection(section)
 end
 
 previousButton:SetScript("OnClick", function()
+    if activeTab == "Quests" then
+        if selectedQuestIndex > 1 then
+            selectedQuestIndex = selectedQuestIndex - 1
+            tabOffsets.Quests = 0
+            renderTab()
+        end
+        return
+    end
     if selectedIndex and visibleSections[selectedIndex - 1] then selectSection(visibleSections[selectedIndex - 1]) end
 end)
 nextButton:SetScript("OnClick", function()
+    if activeTab == "Quests" then
+        if selectedQuestIndex < questCount then
+            selectedQuestIndex = selectedQuestIndex + 1
+            tabOffsets.Quests = 0
+            renderTab()
+        end
+        return
+    end
     if selectedIndex and visibleSections[selectedIndex + 1] then selectSection(visibleSections[selectedIndex + 1]) end
 end)
 
@@ -411,6 +452,55 @@ end)
 
 
 addon.Window = {}
+local scanWindow
+local scanEditBox
+local scanScroll
+function addon.Window.ShowScan(text)
+    -- Create this diagnostic window only when requested, then reuse it.
+    if not scanWindow then
+        scanWindow = CreateFrame("Frame", "LoreCompanionScanWindow", UIParent, "BasicFrameTemplate")
+        scanWindow:SetSize(660, 460)
+        scanWindow:SetPoint("CENTER")
+        scanWindow:SetFrameStrata("DIALOG")
+        scanWindow:SetClampedToScreen(true)
+        scanWindow:EnableMouse(true)
+        scanWindow.TitleText:SetText("Lore Companion — Scan results")
+        table.insert(UISpecialFrames, "LoreCompanionScanWindow")
+
+        local hint = scanWindow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        hint:SetPoint("TOPLEFT", 16, -34)
+        hint:SetText("Text selected: Cmd+C (Mac) / Ctrl+C (Windows) to copy.")
+        scanScroll = CreateFrame("ScrollFrame", nil, scanWindow, "UIPanelScrollFrameTemplate")
+        scanScroll:SetPoint("TOPLEFT", 16, -60)
+        scanScroll:SetPoint("BOTTOMRIGHT", -36, 48)
+        scanEditBox = CreateFrame("EditBox", nil, scanScroll)
+        scanEditBox:SetMultiLine(true)
+        scanEditBox:SetAutoFocus(false)
+        scanEditBox:SetFontObject("ChatFontNormal")
+        scanEditBox:SetMaxLetters(0)
+        scanEditBox:SetSize(608, 1)
+        scanScroll:SetScrollChild(scanEditBox)
+        scanEditBox:SetScript("OnEscapePressed", function() scanWindow:Hide() end)
+        scanWindow:SetScript("OnHide", function() scanEditBox:ClearFocus() end)
+
+        local selectButton = CreateFrame("Button", nil, scanWindow, "UIPanelButtonTemplate")
+        selectButton:SetSize(110, 24)
+        selectButton:SetPoint("BOTTOMLEFT", 16, 14)
+        selectButton:SetText("Select all")
+        selectButton:SetScript("OnClick", function()
+            scanEditBox:SetFocus()
+            scanEditBox:HighlightText()
+        end)
+    end
+    scanWindow:Show()
+    scanEditBox:SetText(text)
+    scanEditBox:SetCursorPosition(0)
+    scanEditBox:SetFocus()
+    scanEditBox:HighlightText()
+    scanScroll:UpdateScrollChildRect()
+    scanScroll:SetVerticalScroll(0)
+end
+
 function addon.Window.Open()
     activeTab = "Summary"
     tabOffsets = { Summary = 0, Quests = 0 }

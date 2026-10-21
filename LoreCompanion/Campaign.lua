@@ -7,6 +7,54 @@ local waitingForLore = false
 local loreFrame = CreateFrame("Frame")
 local loreSections = {}
 local onUpdate
+local requestNumber = 0
+
+-- Diagnostic only: matching numeric IDs do not prove chapter membership.
+function addon.Campaign.Scan(writeLine)
+    -- Send diagnostics to the copy window, or chat when no receiver is supplied.
+    local print = writeLine or print
+    if not C_CampaignInfo or type(C_CampaignInfo.GetChapterIDs) ~= "function"
+        or type(C_CampaignInfo.GetCampaignChapterInfo) ~= "function" then
+        print("Lore Companion: campaign information API is unavailable.")
+        return
+    end
+    local chapterIDs = C_CampaignInfo.GetChapterIDs(campaignID)
+    if not chapterIDs or #chapterIDs == 0 then
+        print("Lore Companion: no chapters returned for campaign " .. campaignID .. ".")
+        return
+    end
+    print("Lore Companion: campaign " .. campaignID .. ", " .. #chapterIDs .. " chapters (spoilers).")
+    print("Candidate quest lists only: membership, completeness, and narrative order are unverified.")
+    local canQueryQuests = C_QuestLine and type(C_QuestLine.GetQuestLineQuests) == "function"
+    for _, chapterID in ipairs(chapterIDs) do
+        local info = C_CampaignInfo.GetCampaignChapterInfo(chapterID)
+        print("Chapter " .. chapterID .. ": " .. (info and info.name or "Metadata unavailable"))
+        -- Inspect returned fields instead of assuming a questline field exists.
+        for key, value in pairs(info or {}) do
+            print("  " .. tostring(key) .. " = " .. tostring(value))
+        end
+        if canQueryQuests then
+            -- pcall catches an API error so the remaining chapters can be inspected.
+            local ok, quests = pcall(C_QuestLine.GetQuestLineQuests, chapterID)
+            if ok and type(quests) == "table" then
+                print("  Testing questline " .. chapterID .. ": " .. #quests .. " candidate quests")
+                -- Short lines keep longer lists readable in the chat window.
+                for first = 1, #quests, 10 do
+                    local ids = {}
+                    for index = first, math.min(first + 9, #quests) do
+                        table.insert(ids, tostring(quests[index]))
+                    end
+                    print("  " .. table.concat(ids, ", "))
+                end
+                if #quests == 0 then print("  No IDs returned; this does not prove the chapter has no quests.") end
+            else
+                print("  Candidate quest query failed or returned unavailable data.")
+            end
+        end
+    end
+    if not canQueryQuests then print("Questline API unavailable; only chapter metadata was inspected.") end
+    print("Lore Companion: scan complete.")
+end
 
 function addon.Campaign.GetSections(showUnavailable)
     local visibleSections = {}
@@ -42,7 +90,7 @@ function addon.Campaign.GetSections(showUnavailable)
                 end
             end
         else
-            table.insert(visibleSections, { title = "Chapter list unavailable", text = "Chapter information API is unavailable." })
+            table.insert(visibleSections, { title = "Chapter list unavailable", text = "Chapter information API is unavailable.", unavailable = true })
         end
     end
     return visibleSections
@@ -81,6 +129,8 @@ end)
 
 -- The listener is registered before requesting, because responses can be synchronous.
 function addon.Campaign.Request(callback)
+    requestNumber = requestNumber + 1
+    local thisRequest = requestNumber
     onUpdate = callback
     loreSections = {}
     waitingForLore = false
@@ -90,5 +140,12 @@ function addon.Campaign.Request(callback)
     end
     callback("Requesting Midnight campaign text...")
     waitingForLore = true
+    -- Each timer belongs to one request; an older timer must not end a retry.
+    C_Timer.After(15, function()
+        if waitingForLore and requestNumber == thisRequest then
+            waitingForLore = false
+            callback("Campaign text request timed out. Type /lore to retry.")
+        end
+    end)
     C_LoreText.RequestLoreTextForCampaignID(campaignID)
 end
