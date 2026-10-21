@@ -1,4 +1,4 @@
-# Quest Data Fetcher 0.2.3
+# Quest Data Fetcher 0.3.0
 
 Fetch original Blizzard quest descriptions and generate JSON responses,
 `manifest.json`, and `QuestData.lua`. This package only generates data;
@@ -34,6 +34,10 @@ For a successful full-map run, expect `Saved 233/233 quests` and
 404, the saved count is lower and the unavailable count is reported separately.
 The addon reader displays mapped chapters through unique matching headings;
 missing or ambiguous matches are shown as unavailable.
+At runtime it checks the bundled list against the client's campaign/questline
+data and uses the live membership and ordering when available. Newly returned
+quest IDs without bundled text remain unavailable until a later data update.
+This comparison does not verify narrative order or modify the source map.
 
 Each run replaces generated quest data, preserving README files. It does not
 modify ZIPs. Do not run concurrent exports. Credentials stay out of output.

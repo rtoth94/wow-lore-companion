@@ -513,11 +513,12 @@ Development environment:
 
 Current status:
 
-- Version 0.2.3: chapter context, quest selector, and per-character chapter/tab/quest bookmarks.
-- Bundled original English quest data for 17 scanned Midnight chapters; title matching remains English-only.
+- Version 0.3.0: quest progress, live chapter-list verification, current-story navigation, and spoiler-aware search.
+- Chapter context, quest selector, and per-character chapter/tab/quest bookmarks retained.
+- Bundled original English quest data for 17 scanned Midnight chapters; matching can use localized client metadata.
 - Separate summary/quest text availability labels and specific unavailable-data messages.
 - Build/deploy tooling, campaign request timeout, and deployment rollback implemented.
-- Quest narrative order, full dialogue, and completion indicators remain unverified or unimplemented.
+- Quest narrative order and full dialogue remain unverified or unimplemented. New progress and navigation require in-game validation.
 
 Current milestone:
 
@@ -525,7 +526,7 @@ Current milestone:
 
 Current task:
 
-**Validate version 0.2.3 in WoW: dropdown navigation, bookmark restoration, spoiler controls, availability labels, and layout.**
+**Validate version 0.3.0 in WoW: progress indicators, client list comparisons, current-story navigation, search, bookmarks, and layout.**
 
 Do not implement subsequent steps automatically.
 
